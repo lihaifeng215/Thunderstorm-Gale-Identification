@@ -1,0 +1,112 @@
+import numpy as np
+from keras.models import Sequential
+from keras.layers import Dense, Conv2D, Flatten, Dropout, Activation, ConvLSTM2D, Merge
+from keras.optimizers import Adam
+from sklearn.preprocessing import MinMaxScaler
+
+model1 = Sequential()
+model1.add(ConvLSTM2D(filters=30,kernel_size=(3,3),strides=(1,1),padding='valid',return_sequences=True,input_shape=(2,19,19,9)))
+model1.add(Activation('elu'))
+model1.add(ConvLSTM2D(filters=30,kernel_size=(3,3),strides=(1,1),padding='valid',return_sequences=True))
+model1.add(Activation('elu'))
+model1.add(ConvLSTM2D(filters=30,kernel_size=(3,3),strides=(1,1),padding='valid'))
+model1.add(Activation('elu'))
+
+model2 = Sequential()
+model2.add(ConvLSTM2D(filters=30,kernel_size=(3,3),strides=(1,1),padding='same',input_shape=(2,13,13,9)))
+model2.add(Activation('elu'))
+
+model3 = Sequential()
+model3.add(Merge([model1,model2],mode='sum'))
+model3.add(Conv2D(filters=30,kernel_size=(3,3),strides=(1,1),padding='valid'))
+model3.add(Activation('elu'))
+model3.add(Flatten())
+model3.add(Dropout(rate=0.5))
+model3.add(Dense(1))
+model3.compile(optimizer=Adam(lr=0.001),loss='mae')
+
+
+# get all_batch_data of data_19x19
+def get_batch_19x19(data_19x19):
+    all_batch_data = np.array(data_19x19[:,5:-1])
+    all_batch_label = np.array(data_19x19[:,-1])
+    all_batch_data = all_batch_data.reshape(all_batch_data.shape[0], 20, 19, 19)
+    all_batch_data = np.transpose(all_batch_data, axes=(0,2,3,1))
+    # choice channel
+    all_batch_data = np.concatenate((all_batch_data[:,:,:,9:18],all_batch_data[:,:,:,0:9]),axis=-1)
+
+    all_batch_label = data_19x19[:, -1]
+
+    return all_batch_data, all_batch_label
+
+# get all_batch_data of data_13x13
+def get_batch_13x13(data_13x13):
+    all_batch_data = np.array(data_13x13[:, 5:-1])
+    all_batch_label = np.array(data_13x13[:, -1])
+    all_batch_data = all_batch_data.reshape(all_batch_data.shape[0],20, 13,13)
+    all_batch_data = np.transpose(all_batch_data, axes=(0,2,3,1))
+
+    # choice channel
+    all_batch_data = np.concatenate((all_batch_data[:, :, :, 9:18], all_batch_data[:, :, :, 0:9]), axis=-1)
+    all_batch_label = data_13x13[:, -1]
+    return all_batch_data, all_batch_label
+
+# Normalize data
+def preprocess(all_batch_data, size, channel):
+    transform_data = all_batch_data.reshape(-1, channel)
+    transform_data = MinMaxScaler().fit_transform(transform_data)
+    all_batch_data = transform_data.reshape(all_batch_data.shape[0], size*2+1, size*2+1, channel)
+    return all_batch_data
+
+
+train_data_19x19 = np.loadtxt("file/train_test/train_dataset_17y_Radar_denoised_19x19_append_features_reg_labeled.csv",delimiter=',')
+print("train_data_19x19.shape:", train_data_19x19.shape)
+test_data_19x19 = np.loadtxt("file/train_test/test_dataset_17y_Radar_denoised_19x19_append_features_reg_labeled.csv",delimiter=',')
+train_data_13x13 = np.loadtxt("file/train_test/train_dataset_17y_Radar_denoised_13x13_append_features_reg_labeled.csv",delimiter=',')
+print("train_data_13x13.shape:", train_data_13x13.shape)
+test_data_13x13 = np.loadtxt("file/train_test/test_dataset_17y_Radar_denoised_13x13_append_features_reg_labeled.csv",delimiter=',')
+
+train_batch_data_19x19, train_batch_label_19x19 = get_batch_19x19(train_data_19x19)
+print("train_batch_data_19x19, train_batch_label_19x19:", train_batch_data_19x19.shape,train_batch_label_19x19.shape)
+test_batch_data_19x19, test_batch_label_19x19 = get_batch_19x19(test_data_19x19)
+print("test_batch_data_19x19, test_batch_label_19x19:", test_batch_data_19x19.shape,test_batch_label_19x19.shape)
+
+train_batch_data_13x13, train_batch_label_13x13 = get_batch_13x13(train_data_13x13)
+print("train_batch_data_13x13, train_batch_label_13x13:", train_batch_data_13x13.shape, train_batch_label_13x13.shape)
+test_batch_data_13x13, test_batch_label_13x13 = get_batch_13x13(test_data_13x13)
+print("test_batch_data_13x13, test_batch_label_13x13:", test_batch_data_13x13.shape, test_batch_label_13x13.shape)
+
+train_batch_data_19x19 = preprocess(train_batch_data_19x19, size=9, channel=18)
+test_batch_data_19x19 = preprocess(test_batch_data_19x19, size=9, channel=18)
+train_batch_data_13x13 = preprocess(train_batch_data_13x13, size=6, channel=18)
+test_batch_data_13x13 = preprocess(test_batch_data_13x13, size=6, channel=18)
+
+print(train_batch_data_19x19.shape, test_batch_label_19x19.shape, test_batch_data_19x19.shape, test_batch_label_19x19.shape)
+print(train_batch_data_13x13.shape, test_batch_label_13x13.shape, test_batch_data_13x13.shape, test_batch_label_13x13.shape)
+
+train_batch_data_19x19 = train_batch_data_19x19.reshape(train_batch_data_19x19.shape[0], 19, 19, 9,2).transpose(0,4,1,2,3)
+test_batch_data_19x19 = test_batch_data_19x19.reshape(test_batch_data_19x19.shape[0], 19, 19, 9,2).transpose(0,4,1,2,3)
+print(train_batch_data_19x19.shape, test_batch_label_19x19.shape, test_batch_data_19x19.shape, test_batch_label_19x19.shape)
+
+train_batch_data_13x13 = train_batch_data_13x13.reshape(train_batch_data_13x13.shape[0], 13, 13, 9,2).transpose(0,4,1,2,3)
+test_batch_data_13x13 = test_batch_data_13x13.reshape(test_batch_data_13x13.shape[0], 13, 13, 9,2).transpose(0,4,1,2,3)
+print(train_batch_data_13x13.shape, test_batch_label_13x13.shape, test_batch_data_13x13.shape, test_batch_label_13x13.shape)
+
+
+model3.fit([train_batch_data_19x19,train_batch_data_13x13],train_batch_label_19x19,batch_size=1000,epochs=300,verbose=2,validation_split=0.2,shuffle=True)
+pred = model3.predict([test_batch_data_19x19,test_batch_data_13x13])
+result = np.column_stack((test_batch_label_19x19, pred))
+np.savetxt("file/keras_19x19_13x13_lstm_rcnn_result.csv",result,delimiter=',',fmt='%f')
+model3.save("file/models/cnn_19x19_13x13_lstm_rcnn.hdf5")
+
+from sklearn import metrics
+data = result
+r2_score = metrics.r2_score(data[:,0],data[:,1])
+print("r2_score:",r2_score)
+mae = metrics.mean_absolute_error(data[:,0],data[:,1])
+rmse = np.sqrt(metrics.mean_squared_error(data[:,0],data[:,1]))
+print("mae:",mae)
+print("rmse:",rmse)
+
+
+
